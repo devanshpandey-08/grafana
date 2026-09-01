@@ -67,6 +67,10 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.restoreAllMocks();
+  Object.defineProperty(contextSrv, 'isSignedIn', {
+    configurable: true,
+    value: true,
+  });
 });
 
 describe('canViewFiringAlerts', () => {
@@ -82,6 +86,28 @@ describe('canViewFiringAlerts', () => {
 });
 
 describe('useFiringAlerts', () => {
+  it('does not request user teams for anonymous users', async () => {
+    Object.defineProperty(contextSrv, 'isSignedIn', {
+      configurable: true,
+      value: false,
+    });
+
+    const requests: string[] = [];
+
+    server.use(
+      http.get('/api/user/teams', ({ request }) => {
+        requests.push(request.url);
+        return HttpResponse.json([]);
+      })
+    );
+
+    const { result } = renderHook(() => useFiringAlerts(), { wrapper: getWrapper({}) });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(requests).toEqual([]);
+  });
+
   it('derives counts and severity totals from the fetched alerts', async () => {
     mockAlerts([
       makeAlert({ labels: { alertname: 'CPU Critical', severity: 'critical' } }),
