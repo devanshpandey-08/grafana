@@ -65,12 +65,15 @@ beforeEach(() => {
   mockAlerts([]);
 });
 
-afterEach(() => {
-  jest.restoreAllMocks();
+beforeEach(() => {
   Object.defineProperty(contextSrv, 'isSignedIn', {
     configurable: true,
     value: true,
   });
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
 });
 
 describe('canViewFiringAlerts', () => {
