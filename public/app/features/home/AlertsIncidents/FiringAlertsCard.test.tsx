@@ -65,6 +65,12 @@ beforeEach(() => {
   jest
     .spyOn(contextSrv, 'hasPermission')
     .mockImplementation((action: string) => action === AccessControlAction.AlertingInstanceRead);
+
+  Object.defineProperty(contextSrv, 'isSignedIn', {
+    configurable: true,
+    value: true,
+  });
+
   mockTeams([]);
   mockAlerts([]);
 });
