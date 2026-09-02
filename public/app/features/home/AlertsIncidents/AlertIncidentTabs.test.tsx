@@ -145,6 +145,12 @@ beforeEach(async () => {
   jest
     .spyOn(contextSrv, 'hasPermission')
     .mockImplementation((action: string) => action === AccessControlAction.AlertingInstanceRead);
+
+  Object.defineProperty(contextSrv, 'isSignedIn', {
+    configurable: true,
+    value: true,
+  });
+
   // The team dropdown only renders when the state-history Prometheus datasource is configured.
   config.unifiedAlerting.stateHistory = {
     ...originalStateHistory,
