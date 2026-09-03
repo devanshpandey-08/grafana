@@ -37,6 +37,14 @@ jest.mock('../analytics/main', () => ({
   homepageViewed: jest.fn(),
 }));
 
+jest.mock('app/core/services/context_srv', () => ({
+  contextSrv: {
+    ...jest.requireActual('app/core/services/context_srv').contextSrv,
+    hasPermission: jest.fn(),
+    isSignedIn: true,
+  },
+}));
+
 // The team dropdown loads its options from the `team` label values on alerts,
 // via the triage fetchTagValues helper; mock it rather than the datasource layer.
 jest.mock('app/features/alerting/unified/triage/scene/tagKeysProviders', () => ({
@@ -146,10 +154,6 @@ beforeEach(async () => {
     .spyOn(contextSrv, 'hasPermission')
     .mockImplementation((action: string) => action === AccessControlAction.AlertingInstanceRead);
 
-  Object.defineProperty(contextSrv, 'isSignedIn', {
-    configurable: true,
-    value: true,
-  });
 
   // The team dropdown only renders when the state-history Prometheus datasource is configured.
   config.unifiedAlerting.stateHistory = {
