@@ -418,12 +418,6 @@ describe('AlertIncidentTabs', () => {
   });
 
   describe('team filter dropdown', () => {
-    beforeEach(() => {
-      Object.defineProperty(contextSrv, 'isSignedIn', {
-        configurable: true,
-        value: true,
-      });
-    });
 
     it('shows the dropdown on the Alerts tab and hides it on the Incidents tab', async () => {
       mockTeamLabelValues(['Team A']);
