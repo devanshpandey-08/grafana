@@ -61,15 +61,9 @@ beforeEach(() => {
   jest
     .spyOn(contextSrv, 'hasPermission')
     .mockImplementation((action: string) => action === AccessControlAction.AlertingInstanceRead);
+  jest.spyOn(contextSrv, 'isSignedIn', 'get').mockReturnValue(true);
   mockTeams([]);
   mockAlerts([]);
-});
-
-beforeEach(() => {
-  Object.defineProperty(contextSrv, 'isSignedIn', {
-    configurable: true,
-    value: true,
-  });
 });
 
 afterEach(() => {
@@ -90,10 +84,7 @@ describe('canViewFiringAlerts', () => {
 
 describe('useFiringAlerts', () => {
   it('does not request user teams for anonymous users', async () => {
-    Object.defineProperty(contextSrv, 'isSignedIn', {
-      configurable: true,
-      value: false,
-    });
+    jest.spyOn(contextSrv, 'isSignedIn', 'get').mockReturnValue(false);
 
     const requests: string[] = [];
 
@@ -182,7 +173,7 @@ describe('useFiringAlerts', () => {
       const { result } = renderHook(() => useFiringAlerts('team.one'), { wrapper: getWrapper({}) });
       await waitFor(() => expect(result.current.loading).toBe(false));
 
-      // escapeRegExp adds '\.', quoteWithEscape doubles the backslash on the wire.
+      // escapeRegExp adds '\\.', quoteWithEscape doubles the backslash on the wire.
       expect(requests).toEqual([['team=~"team\\\\.one"']]);
     });
   });
