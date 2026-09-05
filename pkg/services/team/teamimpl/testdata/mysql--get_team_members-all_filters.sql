@@ -7,7 +7,7 @@ SELECT
   team_user.name,
   team_user.login,
   team_user.uid AS user_uid,
-  COALESCE(team_member.external, FALSE) AS external,
+  COALESCE(team_member.external, FALSE) AS `external`,
   COALESCE(team_member.permission, 0) AS permission,
   user_auth.auth_module,
   team.uid AS team_uid
