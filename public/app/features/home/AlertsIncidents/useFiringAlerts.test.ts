@@ -61,7 +61,7 @@ beforeEach(() => {
   jest
     .spyOn(contextSrv, 'hasPermission')
     .mockImplementation((action: string) => action === AccessControlAction.AlertingInstanceRead);
-  jest.spyOn(contextSrv, 'isSignedIn', 'get').mockReturnValue(true);
+  jest.replaceProperty(contextSrv, 'isSignedIn', true);
   mockTeams([]);
   mockAlerts([]);
 });
@@ -84,7 +84,7 @@ describe('canViewFiringAlerts', () => {
 
 describe('useFiringAlerts', () => {
   it('does not request user teams for anonymous users', async () => {
-    jest.spyOn(contextSrv, 'isSignedIn', 'get').mockReturnValue(false);
+    jest.replaceProperty(contextSrv, 'isSignedIn', false);
 
     const requests: string[] = [];
 
