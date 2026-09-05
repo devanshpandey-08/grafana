@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/mock"
@@ -112,53 +113,29 @@ func TestAlertBroadcast_MarshalBinary(t *testing.T) {
 
 func TestAlertBroadcast_Merge(t *testing.T) {
 	t.Run("empty payload returns nil", func(t *testing.T) {
-		moa := &MultiOrgAlertmanager{
-			logger:        log.NewNopLogger(),
-			alertmanagers: make(map[int64]Alertmanager),
-		}
+		moa := &MultiOrgAlertmanager{logger: log.NewNopLogger(), alertmanagers: make(map[int64]Alertmanager)}
 		state := newAlertBroadcastState(log.NewNopLogger(), moa)
-
-		err := state.Merge([]byte{})
-		require.NoError(t, err)
+		require.NoError(t, state.Merge([]byte{}))
 	})
 
 	t.Run("nil payload returns nil", func(t *testing.T) {
-		moa := &MultiOrgAlertmanager{
-			logger:        log.NewNopLogger(),
-			alertmanagers: make(map[int64]Alertmanager),
-		}
+		moa := &MultiOrgAlertmanager{logger: log.NewNopLogger(), alertmanagers: make(map[int64]Alertmanager)}
 		state := newAlertBroadcastState(log.NewNopLogger(), moa)
-
-		err := state.Merge(nil)
-		require.NoError(t, err)
+		require.NoError(t, state.Merge(nil))
 	})
 
 	t.Run("invalid JSON returns nil", func(t *testing.T) {
-		moa := &MultiOrgAlertmanager{
-			logger:        log.NewNopLogger(),
-			alertmanagers: make(map[int64]Alertmanager),
-		}
+		moa := &MultiOrgAlertmanager{logger: log.NewNopLogger(), alertmanagers: make(map[int64]Alertmanager)}
 		state := newAlertBroadcastState(log.NewNopLogger(), moa)
-
-		err := state.Merge([]byte("not valid json"))
-		require.NoError(t, err)
+		require.NoError(t, state.Merge([]byte("not valid json")))
 	})
 
 	t.Run("empty alerts in payload returns nil", func(t *testing.T) {
-		moa := &MultiOrgAlertmanager{
-			logger:        log.NewNopLogger(),
-			alertmanagers: make(map[int64]Alertmanager),
-		}
+		moa := &MultiOrgAlertmanager{logger: log.NewNopLogger(), alertmanagers: make(map[int64]Alertmanager)}
 		state := newAlertBroadcastState(log.NewNopLogger(), moa)
-
-		payload, err := json.Marshal(AlertBroadcastPayload{
-			OrgID:  1,
-			Alerts: apimodels.PostableAlerts{PostableAlerts: []amv2.PostableAlert{}},
-		})
+		payload, err := json.Marshal(AlertBroadcastPayload{OrgID: 1, Alerts: apimodels.PostableAlerts{PostableAlerts: []amv2.PostableAlert{}}})
 		require.NoError(t, err)
-
-		err = state.Merge(payload)
-		require.NoError(t, err)
+		require.NoError(t, state.Merge(payload))
 	})
 
 	t.Run("delivers alerts to alertmanager", func(t *testing.T) {
@@ -177,72 +154,71 @@ func TestAlertBroadcast_Merge(t *testing.T) {
 			return true
 		})).Return(nil)
 
-		moa := &MultiOrgAlertmanager{
-			logger:        log.NewNopLogger(),
-			alertmanagers: map[int64]Alertmanager{1: mockAM},
-		}
+		moa := &MultiOrgAlertmanager{logger: log.NewNopLogger(), alertmanagers: map[int64]Alertmanager{1: mockAM}}
 		state := newAlertBroadcastState(log.NewNopLogger(), moa)
-
 		payload, err := json.Marshal(AlertBroadcastPayload{
 			OrgID: 1,
-			Alerts: apimodels.PostableAlerts{
-				PostableAlerts: []amv2.PostableAlert{
-					{Annotations: amv2.LabelSet{"summary": "alert 1"}},
-					{Annotations: amv2.LabelSet{"summary": "alert 2"}},
-					{Annotations: amv2.LabelSet{"summary": "alert 3"}},
-				},
-			},
+			Alerts: apimodels.PostableAlerts{PostableAlerts: []amv2.PostableAlert{
+				{Annotations: amv2.LabelSet{"summary": "alert 1"}},
+				{Annotations: amv2.LabelSet{"summary": "alert 2"}},
+				{Annotations: amv2.LabelSet{"summary": "alert 3"}},
+			}},
 		})
 		require.NoError(t, err)
 
-		err = state.Merge(payload)
+		require.NoError(t, state.Merge(payload))
+		require.Eventually(t, func() bool { return mockAM.AssertExpectations(t) }, time.Second, 10*time.Millisecond)
+	})
+
+	t.Run("returns immediately when PutAlerts blocks", func(t *testing.T) {
+		mockAM := alertmanager_mock.NewAlertmanagerMock(t)
+		mockAM.On("Ready").Return(true)
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		mockAM.On("PutAlerts", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			close(entered)
+			<-release
+		}).Return(nil)
+
+		moa := &MultiOrgAlertmanager{logger: log.NewNopLogger(), alertmanagers: map[int64]Alertmanager{1: mockAM}}
+		state := newAlertBroadcastState(log.NewNopLogger(), moa)
+		payload, err := json.Marshal(AlertBroadcastPayload{
+			OrgID: 1,
+			Alerts: apimodels.PostableAlerts{PostableAlerts: []amv2.PostableAlert{{Annotations: amv2.LabelSet{"summary": "test"}}}},
+		})
 		require.NoError(t, err)
-		mockAM.AssertExpectations(t)
+
+		start := time.Now()
+		require.NoError(t, state.Merge(payload))
+		require.Less(t, time.Since(start), 100*time.Millisecond)
+		require.Eventually(t, func() bool {
+			select {
+			case <-entered:
+				return true
+			default:
+				return false
+			}
+		}, time.Second, 10*time.Millisecond)
+		close(release)
 	})
 
 	t.Run("skips when alertmanager not found", func(t *testing.T) {
-		moa := &MultiOrgAlertmanager{
-			logger:        log.NewNopLogger(),
-			alertmanagers: make(map[int64]Alertmanager),
-		}
+		moa := &MultiOrgAlertmanager{logger: log.NewNopLogger(), alertmanagers: make(map[int64]Alertmanager)}
 		state := newAlertBroadcastState(log.NewNopLogger(), moa)
-
-		payload, err := json.Marshal(AlertBroadcastPayload{
-			OrgID: 999,
-			Alerts: apimodels.PostableAlerts{
-				PostableAlerts: []amv2.PostableAlert{
-					{Annotations: amv2.LabelSet{"summary": "test"}},
-				},
-			},
-		})
+		payload, err := json.Marshal(AlertBroadcastPayload{OrgID: 999, Alerts: apimodels.PostableAlerts{PostableAlerts: []amv2.PostableAlert{{Annotations: amv2.LabelSet{"summary": "test"}}}}})
 		require.NoError(t, err)
-
-		err = state.Merge(payload)
-		require.NoError(t, err)
+		require.NoError(t, state.Merge(payload))
 	})
 
 	t.Run("skips when alertmanager not ready", func(t *testing.T) {
 		mockAM := alertmanager_mock.NewAlertmanagerMock(t)
 		mockAM.On("Ready").Return(false)
-
-		moa := &MultiOrgAlertmanager{
-			logger:        log.NewNopLogger(),
-			alertmanagers: map[int64]Alertmanager{1: mockAM},
-		}
+		moa := &MultiOrgAlertmanager{logger: log.NewNopLogger(), alertmanagers: map[int64]Alertmanager{1: mockAM}}
 		state := newAlertBroadcastState(log.NewNopLogger(), moa)
-
-		payload, err := json.Marshal(AlertBroadcastPayload{
-			OrgID: 1,
-			Alerts: apimodels.PostableAlerts{
-				PostableAlerts: []amv2.PostableAlert{
-					{Annotations: amv2.LabelSet{"summary": "test"}},
-				},
-			},
-		})
+		payload, err := json.Marshal(AlertBroadcastPayload{OrgID: 1, Alerts: apimodels.PostableAlerts{PostableAlerts: []amv2.PostableAlert{{Annotations: amv2.LabelSet{"summary": "test"}}}}})
 		require.NoError(t, err)
-
-		err = state.Merge(payload)
-		require.NoError(t, err)
+		require.NoError(t, state.Merge(payload))
+		time.Sleep(10 * time.Millisecond)
 		mockAM.AssertNotCalled(t, "PutAlerts", mock.Anything, mock.Anything)
 	})
 
@@ -250,26 +226,12 @@ func TestAlertBroadcast_Merge(t *testing.T) {
 		mockAM := alertmanager_mock.NewAlertmanagerMock(t)
 		mockAM.On("Ready").Return(true)
 		mockAM.On("PutAlerts", mock.Anything, mock.Anything).Return(errors.New("test error"))
-
-		moa := &MultiOrgAlertmanager{
-			logger:        log.NewNopLogger(),
-			alertmanagers: map[int64]Alertmanager{1: mockAM},
-		}
+		moa := &MultiOrgAlertmanager{logger: log.NewNopLogger(), alertmanagers: map[int64]Alertmanager{1: mockAM}}
 		state := newAlertBroadcastState(log.NewNopLogger(), moa)
-
-		payload, err := json.Marshal(AlertBroadcastPayload{
-			OrgID: 1,
-			Alerts: apimodels.PostableAlerts{
-				PostableAlerts: []amv2.PostableAlert{
-					{Annotations: amv2.LabelSet{"summary": "test"}},
-				},
-			},
-		})
+		payload, err := json.Marshal(AlertBroadcastPayload{OrgID: 1, Alerts: apimodels.PostableAlerts{PostableAlerts: []amv2.PostableAlert{{Annotations: amv2.LabelSet{"summary": "test"}}}}})
 		require.NoError(t, err)
-
-		err = state.Merge(payload)
-		require.NoError(t, err)
-		mockAM.AssertExpectations(t)
+		require.NoError(t, state.Merge(payload))
+		require.Eventually(t, func() bool { return mockAM.AssertExpectations(t) }, time.Second, 10*time.Millisecond)
 	})
 }
 
@@ -281,57 +243,17 @@ func TestInitAlertBroadcast(t *testing.T) {
 		needsMetrics    bool
 		customQueueSize int
 	}{
-		{
-			name: "does not initialize when peer is nil",
-			setupPeer: func() (alertingNotify.ClusterPeer, *MockBroadcastChannel) {
-				return nil, nil
-			},
-			expectChannel: false,
-		},
-		{
-			name: "does not initialize when peer is NilPeer",
-			setupPeer: func() (alertingNotify.ClusterPeer, *MockBroadcastChannel) {
-				return &NilPeer{}, nil
-			},
-			expectChannel: false,
-		},
-		{
-			name: "initializes when peer is not NilPeer",
-			setupPeer: func() (alertingNotify.ClusterPeer, *MockBroadcastChannel) {
-				ch := &MockBroadcastChannel{}
-				return &MockClusterPeer{Channel: ch}, ch
-			},
-			expectChannel: true,
-			needsMetrics:  true,
-		},
-		{
-			name: "passes reliable delivery and queue size options",
-			setupPeer: func() (alertingNotify.ClusterPeer, *MockBroadcastChannel) {
-				ch := &MockBroadcastChannel{}
-				return &MockClusterPeer{Channel: ch}, ch
-			},
-			expectChannel: true,
-			needsMetrics:  true,
-		},
-		{
-			name: "passes custom queue size from config",
-			setupPeer: func() (alertingNotify.ClusterPeer, *MockBroadcastChannel) {
-				ch := &MockBroadcastChannel{}
-				return &MockClusterPeer{Channel: ch}, ch
-			},
-			expectChannel:   true,
-			needsMetrics:    true,
-			customQueueSize: 500,
-		},
+		{name: "does not initialize when peer is nil", setupPeer: func() (alertingNotify.ClusterPeer, *MockBroadcastChannel) { return nil, nil }, expectChannel: false},
+		{name: "does not initialize when peer is NilPeer", setupPeer: func() (alertingNotify.ClusterPeer, *MockBroadcastChannel) { return &NilPeer{}, nil }, expectChannel: false},
+		{name: "initializes when peer is not NilPeer", setupPeer: func() (alertingNotify.ClusterPeer, *MockBroadcastChannel) { ch := &MockBroadcastChannel{}; return &MockClusterPeer{Channel: ch}, ch }, expectChannel: true, needsMetrics: true},
+		{name: "passes reliable delivery and queue size options", setupPeer: func() (alertingNotify.ClusterPeer, *MockBroadcastChannel) { ch := &MockBroadcastChannel{}; return &MockClusterPeer{Channel: ch}, ch }, expectChannel: true, needsMetrics: true},
+		{name: "passes custom queue size from config", setupPeer: func() (alertingNotify.ClusterPeer, *MockBroadcastChannel) { ch := &MockBroadcastChannel{}; return &MockClusterPeer{Channel: ch}, ch }, expectChannel: true, needsMetrics: true, customQueueSize: 500},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			peer, expectedChannel := tc.setupPeer()
-			moa := &MultiOrgAlertmanager{
-				logger: log.NewNopLogger(),
-				peer:   peer,
-			}
+			moa := &MultiOrgAlertmanager{logger: log.NewNopLogger(), peer: peer}
 			if tc.needsMetrics {
 				queueSize := tc.customQueueSize
 				if queueSize == 0 {
@@ -340,11 +262,7 @@ func TestInitAlertBroadcast(t *testing.T) {
 				reg := prometheus.NewRegistry()
 				m := metrics.NewNGAlert(reg)
 				moa.metrics = m.GetMultiOrgAlertmanagerMetrics()
-				moa.settings = &setting.Cfg{
-					UnifiedAlerting: setting.UnifiedAlertingSettings{
-						HASingleEvaluationAlertBroadcastQueueSize: queueSize,
-					},
-				}
+				moa.settings = &setting.Cfg{UnifiedAlerting: setting.UnifiedAlertingSettings{HASingleEvaluationAlertBroadcastQueueSize: queueSize}}
 			}
 
 			moa.initAlertBroadcast()
