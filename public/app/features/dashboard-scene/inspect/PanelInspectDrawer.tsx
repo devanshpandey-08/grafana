@@ -65,25 +65,40 @@ export class PanelInspectDrawer extends SceneObjectBase<PanelInspectDrawerState>
     }
 
     if (panelRef) {
+      const jsonTab = new InspectJsonTab({ panelRef, onClose: this.onClose });
+
       if (supportsDataQuery(plugin)) {
         const data = sceneGraph.getData(panelRef.resolve());
 
         tabs.push(new InspectDataTab({ panelRef }));
         tabs.push(new InspectStatsTab({ panelRef }));
         tabs.push(new InspectQueryTab({ panelRef }));
+        tabs.push(jsonTab);
 
-        const dsWithInspector = await getDataSourceWithInspector(data.state.data);
-        if (dsWithInspector) {
-          tabs.push(new InspectMetaDataTab({ panelRef, dataSource: dsWithInspector }));
+        // Custom data-source inspectors are optional. Render the standard inspector immediately
+        // so a slow or unauthorized custom inspector cannot prevent the drawer from opening.
+        this.setState({ tabs: [...tabs] });
+
+        try {
+          const dsWithInspector = await getDataSourceWithInspector(data.state.data);
+          if (dsWithInspector) {
+            tabs.push(new InspectMetaDataTab({ panelRef, dataSource: dsWithInspector }));
+          }
+        } catch {
+          // A custom inspector is optional. Standard inspector tabs remain available.
         }
 
         if (hasErrorsOrNotices(data.state.data)) {
-          const dsWithErrorsAndNotices = await getDataSourceWithErrorsAndNoticesInspector(data.state.data);
-          tabs.push(new InspectErrorsAndNoticesTab({ panelRef, dataSource: dsWithErrorsAndNotices }));
+          try {
+            const dsWithErrorsAndNotices = await getDataSourceWithErrorsAndNoticesInspector(data.state.data);
+            tabs.push(new InspectErrorsAndNoticesTab({ panelRef, dataSource: dsWithErrorsAndNotices }));
+          } catch {
+            // A custom errors/notices inspector is optional as well.
+          }
         }
+      } else {
+        tabs.push(jsonTab);
       }
-
-      tabs.push(new InspectJsonTab({ panelRef, onClose: this.onClose }));
     }
 
     this.setState({ tabs });
