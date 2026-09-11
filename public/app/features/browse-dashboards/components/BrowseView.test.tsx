@@ -10,6 +10,8 @@ import * as useFolderReadmeModule from 'app/features/provisioning/hooks/useFolde
 import { type DashboardViewItem } from 'app/features/search/types';
 import { AccessControlAction } from 'app/types/accessControl';
 
+import { fullyLoadedViewItemCollection } from '../fixtures/state.fixtures';
+
 import { BrowseView } from './BrowseView';
 
 const [mockTree, { folderA, folderA_folderA, folderA_folderB, folderA_folderB_dashbdB, dashbdD, folderB_empty }] =
@@ -62,11 +64,9 @@ describe('browse-dashboards BrowseView', () => {
     render(<BrowseView permissions={mockPermissions} folderUID={undefined} width={WIDTH} height={HEIGHT} />);
     await screen.findByText(folderA.item.title);
 
-    // First expand then click folderA
     await expandFolder(folderA.item);
     await clickCheckbox(folderA.item);
 
-    // All the visible items in it should be checked now
     const directChildren = mockTree.filter((v) => v.item.kind !== 'ui' && v.item.parentUID === folderA.item.uid);
 
     for (const child of directChildren) {
@@ -79,12 +79,8 @@ describe('browse-dashboards BrowseView', () => {
     render(<BrowseView permissions={mockPermissions} folderUID={undefined} width={WIDTH} height={HEIGHT} />);
     await screen.findByText(folderA.item.title);
 
-    // First expand then click folderA
     await expandFolder(folderA.item);
     await clickCheckbox(folderA.item);
-
-    // When additional children are loaded (by expanding a folder), those items
-    // should also be selected
     await expandFolder(folderA_folderB.item);
 
     const grandchildren = mockTree.filter((v) => v.item.kind !== 'ui' && v.item.parentUID === folderA_folderB.item.uid);
@@ -137,6 +133,39 @@ describe('browse-dashboards BrowseView', () => {
     const grandparentCheckbox = screen.queryByTestId(selectors.pages.BrowseDashboards.table.checkbox(folderA.item.uid));
     expect(grandparentCheckbox).not.toBeChecked();
     expect(grandparentCheckbox).toBePartiallyChecked();
+  });
+
+  it('renders a dashboard whose UID matches its parent folder', async () => {
+    const folder: DashboardViewItem = {
+      kind: 'folder',
+      uid: 'same-uid',
+      title: 'Folder same-uid',
+    };
+    const dashboard: DashboardViewItem = {
+      kind: 'dashboard',
+      uid: 'same-uid',
+      title: 'Dashboard same-uid',
+      parentUID: 'same-uid',
+    };
+
+    render(<BrowseView permissions={mockPermissions} folderUID={undefined} width={WIDTH} height={HEIGHT} />, {
+      preloadedState: {
+        browseDashboards: {
+          rootItems: fullyLoadedViewItemCollection([folder]),
+          childrenByParentUID: {
+            'same-uid': fullyLoadedViewItemCollection([dashboard]),
+          },
+          openFolders: { 'same-uid': true },
+          selectedItems: { $all: false, dashboard: {}, folder: {}, panel: {} },
+        },
+      },
+    });
+
+    expect(await screen.findByText(folder.title)).toBeInTheDocument();
+    expect(screen.getByText(dashboard.title)).toBeInTheDocument();
+    expect(
+      screen.getAllByTestId(selectors.pages.BrowseDashboards.table.checkbox('same-uid'))
+    ).toHaveLength(2);
   });
 
   describe('when there is no item in the folder', () => {
