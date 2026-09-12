@@ -16,7 +16,7 @@ import (
 
 func Convert_V2alpha1_to_V0(in *dashv2alpha1.Dashboard, out *dashv0.Dashboard, scope conversion.Scope) error {
 	v1beta1 := &dashv1.Dashboard{}
-	if err := ConvertDashboard_V2alpha1_to_V1(in, v1beta1, scope); err != nil {
+	if err := Convert_V2alpha1_to_V1(in, v1beta1, scope); err != nil {
 		return err
 	}
 	return Convert_V1_to_V0(v1beta1, out, scope)
