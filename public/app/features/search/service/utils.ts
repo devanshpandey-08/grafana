@@ -160,7 +160,9 @@ export function queryResultToViewItem(
     const ancestors = item.location.split('/');
     const parentUid = ancestors[ancestors.length - 1];
     const parentInfo = meta?.locationInfo[parentUid];
-    if (parentInfo) {
+    // Folderless Git Sync can expose a dashboard UID as its location. Never make a dashboard
+    // its own parent, otherwise the dashboards list tries to fetch /folders/<dashboard-uid>.
+    if (parentInfo && !(viewItem.kind === 'dashboard' && parentUid === viewItem.uid)) {
       viewItem.parentTitle = parentInfo.name;
       viewItem.parentKind = parentInfo.kind;
       viewItem.parentUID = parentUid;
