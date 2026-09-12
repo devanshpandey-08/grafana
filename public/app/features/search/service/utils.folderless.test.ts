@@ -1,6 +1,7 @@
-import { queryResultToViewItem } from './utils';
-import { type DashboardQueryResult, type SearchResultMeta } from './types';
 import { type DataFrameView } from '@grafana/data';
+
+import { type DashboardQueryResult, type SearchResultMeta } from './types';
+import { queryResultToViewItem } from './utils';
 
 describe('queryResultToViewItem folderless dashboards', () => {
   const makeQueryResult = (overrides: Partial<DashboardQueryResult> = {}): DashboardQueryResult => ({
